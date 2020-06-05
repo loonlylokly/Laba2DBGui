@@ -6,19 +6,15 @@ from database import *
 class AppGui(QtWidgets.QMainWindow):
     def __init__(self):
         QtWidgets.QWidget.__init__(self)
-        con = psycopg2.connect(
-            dbname='lababase', user='newuser',
-            host='localhost', password='123')
-        con.autocommit = True
+        self.con = None
         self.countUsers = 0
         self.countTarifs = 0
-        self.cur = con.cursor()
-        self.cur.execute(open("sqlFunc.sql", "r").read())
+        self.cur = None
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self)
         self.ui.createdbButton.clicked.connect(self.createDB)
         self.ui.deletedbButton.clicked.connect(self.deleteDB)
-        self.ui.deleteTablesButton.clicked.connect(self.deleteFromTarif)
+        self.ui.deleteTablesButton.clicked.connect(self.cleanAllTables)
         self.ui.userButtonFind.clicked.connect(self.selectUsers)
         self.ui.userButtonInsert.clicked.connect(self.insertUser)
         self.ui.userButtonDelete.clicked.connect(self.deleteFromUser)
@@ -27,6 +23,9 @@ class AppGui(QtWidgets.QMainWindow):
         self.ui.tarifButtonInsert.clicked.connect(self.insertTarif)
         self.ui.tarifButtonDelete.clicked.connect(self.deleteFromTarif)
         self.ui.tarifButtonClean.clicked.connect(self.cleanTariftable)
+        self.ui.tableWidgetUser.setHorizontalHeaderLabels(["Номер", "ФИО", "Адрес", "id Тариф"])
+        self.ui.tableWidgetTarif.setHorizontalHeaderLabels(["id тарифа", "Название тарифа", "Стоимость", "Кол. клиентов"])
+
 
 
     def updateTableUser(self, rows = None):
@@ -36,8 +35,6 @@ class AppGui(QtWidgets.QMainWindow):
             rows = self.cur.fetchall()
 
         for r in rows:
-            print(i)
-            print(r[0])
             self.ui.tableWidgetUser.setItem(i, 0, QtWidgets.QTableWidgetItem(str(r[0])))
             self.ui.tableWidgetUser.setItem(i, 1, QtWidgets.QTableWidgetItem(str(r[1])))
             self.ui.tableWidgetUser.setItem(i, 2, QtWidgets.QTableWidgetItem(str(r[2])))
@@ -45,7 +42,6 @@ class AppGui(QtWidgets.QMainWindow):
             i=i+1
         if(len(rows)<self.countUsers):
             for j in range(len(rows),self.countUsers):
-                print(j)
                 self.ui.tableWidgetUser.takeItem(j, 0)
                 self.ui.tableWidgetUser.takeItem(j, 1)
                 self.ui.tableWidgetUser.takeItem(j, 2)
@@ -54,11 +50,11 @@ class AppGui(QtWidgets.QMainWindow):
 
     def updateTableTarif(self, rows = None):
         i = 0
-        if rows is None:
+        if rows == "" or rows is None:
             self.cur.callproc("selectAllTarifs")
             rows = self.cur.fetchall()
+
         for r in rows:
-            print(r[0])
             self.ui.tableWidgetTarif.setItem(i, 0, QtWidgets.QTableWidgetItem(str(r[0])))
             self.ui.tableWidgetTarif.setItem(i, 1, QtWidgets.QTableWidgetItem(str(r[1])))
             self.ui.tableWidgetTarif.setItem(i, 2, QtWidgets.QTableWidgetItem(str(r[2])))
@@ -66,7 +62,6 @@ class AppGui(QtWidgets.QMainWindow):
             i = i + 1
         if (len(rows) < self.countTarifs):
             for j in range(len(rows), self.countTarifs):
-                print(j)
                 self.ui.tableWidgetTarif.takeItem(j, 0)
                 self.ui.tableWidgetTarif.takeItem(j, 1)
                 self.ui.tableWidgetTarif.takeItem(j, 2)
@@ -91,21 +86,41 @@ class AppGui(QtWidgets.QMainWindow):
         con.autocommit = True
         cur = con.cursor()
         cur.execute(open("sqlcreate.sql", "r").read())
+        cur.callproc('createDB')
         cur.close()
         con.close()
-        self.createTables()
+        self.con = psycopg2.connect(
+            dbname='lababase', user='newuser',
+            host='localhost', password='123')
+        self.con.autocommit = True
+        self.cur = self.con.cursor()
+        self.cur.execute(open("sqlFunc.sql", "r").read())
         self.updateTableTarif()
         self.updateTableUser()
 
     def deleteDB(self):
+        self.ui.deletedbButton.setEnabled(False)
+        self.ui.deleteTablesButton.setEnabled(False)
+        self.ui.userButtonFind.setEnabled(False)
+        self.ui.userButtonInsert.setEnabled(False)
+        self.ui.userButtonDelete.setEnabled(False)
+        self.ui.userButtonClean.setEnabled(False)
+        self.ui.tarifButtonFind.setEnabled(False)
+        self.ui.tarifButtonInsert.setEnabled(False)
+        self.ui.tarifButtonDelete.setEnabled(False)
+        self.ui.tarifButtonClean.setEnabled(False)
+        self.cleanAllTables()
+        self.cur.close()
+        self.con.close()
         con = psycopg2.connect(
             database='postgres', user='postgres',
             host='localhost', password='root')
         con.autocommit = True
         cur = con.cursor()
-        #cur.execute(open("sqldelete.sql", "r").read())
+        cur.callproc('dropDB')
         cur.close()
         con.close()
+
 
     def createTables(self):
         self.cur.callproc("createTables")
@@ -115,30 +130,36 @@ class AppGui(QtWidgets.QMainWindow):
         username = self.ui.usernameLineEdit.text()
         address = self.ui.addressLineEdit.text()
         idtarif = self.ui.tarifLineEdit.text()
-        self.cur.callproc("insertUser", [phone, username, address, idtarif])
-        self.updateTableUser()
+        if (phone != "" and username != "" and address != "" and idtarif != ""):
+            self.cur.callproc("insertUser", [phone, username, address, idtarif])
+            self.updateTableUser()
+            self.updateTableTarif()
 
     def insertTarif(self):
         id = self.ui.tarifidLineEdit.text()
         tarif = self.ui.tarifnameLineEdit.text()
         price = self.ui.tarifpriceLineEdit.text()
-        self.cur.callproc("insertTarif", [id, tarif, price])
-        self.updateTableTarif()
+        if (id != "" and tarif != "" and price != ""):
+            self.cur.callproc("insertTarif", [id, tarif, price])
+            self.updateTableTarif()
 
     def selectUsers(self):
         username = self.ui.usernameLineEdit.text()
-        print("1",username,"1","","2")
-        self.updateTableUser(username)
+        if username == "":
+            self.cur.callproc("selectAllUsers")
+        else:
+            self.cur.callproc("selectUsers", [str(username)])
+        rows = self.cur.fetchall()
+        self.updateTableUser(rows)
 
     def selectTarif(self):
         tarif = self.ui.tarifnameLineEdit.text()
-
-        if tarif == " ":
-            self.cur.callproc("selectTarif", [tarif])
+        if tarif == "":
+            self.cur.callproc("selectAllTarifs")
+        else:
+            self.cur.callproc("selectTarifs", [str(tarif)])
         rows = self.cur.fetchall()
-        if tarif is not None:
-            self.updateTableTarif(rows)
-        self.updateTableTarif([])
+        self.updateTableTarif(rows)
 
     def deleteFromUser(self):
         username = self.ui.usernameLineEdit.text()
@@ -159,12 +180,14 @@ class AppGui(QtWidgets.QMainWindow):
         self.updateTableTarif()
 
     def cleanAllTables(self):
-        self.cleanTariftable()
         self.cleanUsertable()
+        self.cleanTariftable()
         self.updateTableTarif()
 
     def setIndex(self):
         self.cur.callproc("setIndex")
+
+
 
 if __name__ == "__main__":
     app = QtWidgets.QApplication(sys.argv)

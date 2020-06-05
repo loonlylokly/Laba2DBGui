@@ -18,6 +18,7 @@ returns void as $$ begin
 end; $$
 language plpgsql;
 
+select createTables();
 
 create or replace function insertUser (arg1 bigint, arg2 char(50), arg3 char(50), arg4 int)
 returns void as $$ begin
@@ -30,7 +31,7 @@ language plpgsql;
 create or replace function insertTarif (arg1 int, arg2 char(50), arg3 int)
 returns void as $$ begin
 	if not exists(select * from tariftable where id = arg1) then
-		INSERT INTO tariftable VALUES(arg1, arg2, arg3);
+		INSERT INTO tariftable VALUES(arg1, arg2, arg3, 0);
 	end if;
 end; $$
 language plpgsql;
@@ -101,6 +102,10 @@ end; $$
 language plpgsql;
 
 
+
+
+
+
 create or replace function setIndex ()
 returns void as $$ begin
 	if not exists(SELECT * FROM pg_indexes WHERE tablename = 'tariftable') then
@@ -124,3 +129,22 @@ as $$ begin
 	return query select * from tariftable;
 end; $$
 language plpgsql;
+
+
+create or replace function triggerFunc()
+returns trigger as $$ begin
+	if not exists(select * from tariftable where id = new.idtarif) then
+		insert into tariftable(id, tarif, price, countUsers) values(new.idtarif, 'Tarif', 0, 1);
+	else
+		update tariftable set countUsers = countUsers+1 where id = new.idtarif;
+	end if;
+	return new;
+end;
+$$ language plpgsql;
+
+do $$ begin
+	if not exists(select * from pg_trigger where tgname='triggercount') then
+		create  trigger triggerCount before insert ON usertable
+            for row execute PROCEDURE triggerFunc();
+	end if;
+end $$;
